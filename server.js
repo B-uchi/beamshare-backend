@@ -5,8 +5,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_CHANGE_THIS";
+const PORT = process.env.PORT || 8080;
 
-const wss = new WebSocketServer({ port: 8080 });
+const wss = new WebSocketServer({ port: PORT });
 const sessions = new Map();
 
 /*
