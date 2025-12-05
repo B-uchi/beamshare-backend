@@ -145,6 +145,16 @@ wss.on("listening", () => {
    ------------------- HANDLER LOGIC --------------------------
 ------------------------------------------------------------ */
 
+function safeSend(socket, data) {
+  if (socket && socket.readyState === 1) { // WebSocket.OPEN
+    try {
+      socket.send(JSON.stringify(data));
+    } catch (e) {
+      console.error("Error sending to socket:", e);
+    }
+  }
+}
+
 function handleCreateSession(socket, clientId) {
   const sessionId = crypto.randomUUID().slice(0, 6).toUpperCase();
   const sessionStartTime = new Date().toISOString();
@@ -161,23 +171,19 @@ function handleCreateSession(socket, clientId) {
 
   console.log(`Session created: ${sessionId} by host: ${clientId}`);
 
-  socket.send(
-    JSON.stringify({
-      type: "session-created",
-      sessionId,
-      clientId,
-      startedAt: sessionStartTime,
-    })
-  );
+  safeSend(socket, {
+    type: "session-created",
+    sessionId,
+    clientId,
+    startedAt: sessionStartTime,
+  });
 }
 
 function handleJoinSession(socket, clientId, { sessionId, name }) {
   const session = sessions.get(sessionId);
   if (!session) {
     console.log(`Session not found: ${sessionId}`);
-    return socket.send(
-      JSON.stringify({ type: "error", message: "Session not found" })
-    );
+    return safeSend(socket, { type: "error", message: "Session not found" });
   }
 
   session.peers.set(clientId, { name, socket });
@@ -191,38 +197,32 @@ function handleJoinSession(socket, clientId, { sessionId, name }) {
   }));
 
   // Inform the joining peer first
-  socket.send(
-    JSON.stringify({
-      type: "joined-session",
-      hostId: session.hostId,
-      startedAt: session.startedAt,
-      clientId,
-      name,
-      connectedPeers: existingPeers,
-    })
-  );
+  safeSend(socket, {
+    type: "joined-session",
+    hostId: session.hostId,
+    startedAt: session.startedAt,
+    clientId,
+    name,
+    connectedPeers: existingPeers,
+  });
 
   // Then inform host about the new peer (this triggers WebRTC offer creation)
-  session.hostSocket.send(
-    JSON.stringify({
-      type: "peer-joined",
-      clientId,
-      name,
-      sessionId,
-    })
-  );
+  safeSend(session.hostSocket, {
+    type: "peer-joined",
+    clientId,
+    name,
+    sessionId,
+  });
 
   // Inform other peers about the new peer
   session.peers.forEach(({ socket: peerSocket, name: peerName }, peerId) => {
     if (peerId !== clientId) {
-      peerSocket.send(
-        JSON.stringify({
-          type: "peer-joined",
-          clientId,
-          name,
-          sessionId,
-        })
-      );
+      safeSend(peerSocket, {
+        type: "peer-joined",
+        clientId,
+        name,
+        sessionId,
+      });
     }
   });
 }
@@ -230,9 +230,7 @@ function handleJoinSession(socket, clientId, { sessionId, name }) {
 function handleReconnect(socket, clientId, { sessionId, name, isHost }) {
   const session = sessions.get(sessionId);
   if (!session) {
-    return socket.send(
-      JSON.stringify({ type: "error", message: "Session not found" })
-    );
+    return safeSend(socket, { type: "error", message: "Session not found" });
   }
 
   // Cancel any existing offline timeout
@@ -254,22 +252,20 @@ function handleReconnect(socket, clientId, { sessionId, name, isHost }) {
       clientId: id,
     }));
 
-    socket.send(JSON.stringify({ 
+    safeSend(socket, { 
       type: "reconnected-host", 
       sessionId, 
       connectedPeers: existingPeers,
       clientId 
-    }));
+    });
 
     // Notify all peers that host reconnected
     session.peers.forEach(({ socket: peerSocket }) => {
-      peerSocket.send(
-        JSON.stringify({
-          type: "host-reconnected",
-          hostId: clientId,
-          sessionId,
-        })
-      );
+      safeSend(peerSocket, {
+        type: "host-reconnected",
+        hostId: clientId,
+        sessionId,
+      });
     });
 
     return;
@@ -287,37 +283,31 @@ function handleReconnect(socket, clientId, { sessionId, name, isHost }) {
     }));
 
   // Notify the reconnected peer
-  socket.send(
-    JSON.stringify({
-      type: "reconnected",
-      clientId,
-      sessionId,
-      connectedPeers: existingPeers,
-      hostId: session.hostId
-    })
-  );
+  safeSend(socket, {
+    type: "reconnected",
+    clientId,
+    sessionId,
+    connectedPeers: existingPeers,
+    hostId: session.hostId
+  });
 
   // Notify host about peer reconnection
-  session.hostSocket.send(
-    JSON.stringify({
-      type: "peer-reconnected",
-      clientId,
-      name,
-      sessionId,
-    })
-  );
+  safeSend(session.hostSocket, {
+    type: "peer-reconnected",
+    clientId,
+    name,
+    sessionId,
+  });
 
   // Notify other peers about reconnection
   session.peers.forEach(({ socket: peerSocket }, peerId) => {
     if (peerId !== clientId) {
-      peerSocket.send(
-        JSON.stringify({
-          type: "peer-reconnected",
-          clientId,
-          name,
-          sessionId,
-        })
-      );
+      safeSend(peerSocket, {
+        type: "peer-reconnected",
+        clientId,
+        name,
+        sessionId,
+      });
     }
   });
 }
@@ -330,13 +320,11 @@ function handleSignal(socket, clientId, data) {
   // target can be host or peer
   const targetSocket = findSocketByClientId(sessionId, targetId);
   if (targetSocket) {
-    targetSocket.send(
-      JSON.stringify({
-        type: "signal-offer",
-        from: clientId,
-        offer: payload,
-      })
-    );
+    safeSend(targetSocket, {
+      type: "signal-offer",
+      from: clientId,
+      offer: payload,
+    });
   } else {
     console.warn(`Target socket not found: ${targetId}`);
   }
@@ -350,13 +338,11 @@ function handleSignalAnswer(socket, clientId, data) {
   // target can be host or peer
   const targetSocket = findSocketByClientId(sessionId, target);
   if (targetSocket) {
-    targetSocket.send(
-      JSON.stringify({
-        type: "signal-answer",
-        from: clientId,
-        answer,
-      })
-    );
+    safeSend(targetSocket, {
+      type: "signal-answer",
+      from: clientId,
+      answer,
+    });
   } else {
     console.warn(`Target socket not found: ${target}`);
   }
@@ -370,13 +356,11 @@ function handleSignalIce(socket, clientId, data) {
   // target can be host or peer
   const targetSocket = findSocketByClientId(sessionId, target);
   if (targetSocket) {
-    targetSocket.send(
-      JSON.stringify({
-        type: "signal-ice",
-        from: clientId,
-        candidate,
-      })
-    );
+    safeSend(targetSocket, {
+      type: "signal-ice",
+      from: clientId,
+      candidate,
+    });
   } else {
     console.warn(`Target socket not found: ${target}`);
   }
@@ -391,7 +375,7 @@ function handleChunkBroadcast(socket, clientId, data) {
   if (targetId === "all") {
     session.peers.forEach(({ socket: s }) => {
       if (s !== socket) {
-        s.send(JSON.stringify({ type: "file-chunk", from: clientId, chunk }));
+        safeSend(s, { type: "file-chunk", from: clientId, chunk });
       }
     });
     return;
@@ -400,9 +384,7 @@ function handleChunkBroadcast(socket, clientId, data) {
   // individual peer
   const peer = session.peers.get(targetId);
   if (peer) {
-    peer.socket.send(
-      JSON.stringify({ type: "file-chunk", from: clientId, chunk })
-    );
+    safeSend(peer.socket, { type: "file-chunk", from: clientId, chunk });
   }
 }
 
@@ -427,21 +409,17 @@ function removePeer(sessionId, clientId) {
   session.peers.delete(clientId);
 
   // notify host
-  session.hostSocket.send(
-    JSON.stringify({
-      type: "peer-left",
-      clientId,
-    })
-  );
+  safeSend(session.hostSocket, {
+    type: "peer-left",
+    clientId,
+  });
 
   // notify other peers
   session.peers.forEach(({ socket }) => {
-    socket.send(
-      JSON.stringify({
-        type: "peer-left",
-        clientId,
-      })
-    );
+    safeSend(socket, {
+      type: "peer-left",
+      clientId,
+    });
   });
 
   console.log(`Peer removed ${clientId} from session ${sessionId}`);
@@ -453,7 +431,7 @@ function destroySession(sessionId, closeSockets = true) {
 
   // notify all peers
   session.peers.forEach(({ socket }) => {
-    socket.send(JSON.stringify({ type: "session-ended" }));
+    safeSend(socket, { type: "session-ended" });
     if (closeSockets) {
       socket.close();
     }
@@ -461,7 +439,7 @@ function destroySession(sessionId, closeSockets = true) {
 
   // notify host
   if (closeSockets) {
-    session.hostSocket.send(JSON.stringify({ type: "session-ended" }));
+    safeSend(session.hostSocket, { type: "session-ended" });
     session.hostSocket.close();
   }
 
