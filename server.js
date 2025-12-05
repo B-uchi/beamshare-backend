@@ -101,6 +101,9 @@ wss.on("connection", (socket, req) => {
   // --------------------------------------------
   // DISCONNECT HANDLER
   // --------------------------------------------
+  // --------------------------------------------
+  // DISCONNECT HANDLER
+  // --------------------------------------------
   socket.on("close", () => {
     const meta = socketMeta.get(socket);
     if (!meta) return;
@@ -116,6 +119,15 @@ wss.on("connection", (socket, req) => {
       // HOST DISCONNECTED
       console.log("Host disconnected:", clientId);
 
+      // Notify peers immediately that host is gone (temporarily)
+      session.peers.forEach(({ socket: peerSocket }) => {
+        safeSend(peerSocket, {
+          type: "host-disconnected",
+          hostId: clientId,
+          sessionId,
+        });
+      });
+
       // Give host a 10s reconnection window
       const timeout = setTimeout(() => {
         // Destroy session entirely
@@ -126,6 +138,24 @@ wss.on("connection", (socket, req) => {
     } else {
       // PEER DISCONNECTED
       console.log("Peer disconnected:", clientId);
+
+      // Notify host immediately
+      safeSend(session.hostSocket, {
+        type: "peer-disconnected",
+        clientId,
+        sessionId,
+      });
+
+      // Notify other peers immediately
+      session.peers.forEach(({ socket: peerSocket }, peerId) => {
+        if (peerId !== clientId) {
+          safeSend(peerSocket, {
+            type: "peer-disconnected",
+            clientId,
+            sessionId,
+          });
+        }
+      });
 
       // Add a temporary offline timeout (just in case)
       const timeout = setTimeout(() => {
