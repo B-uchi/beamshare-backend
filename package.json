@@ -1,22 +1,24 @@
 {
-  "name": "backend",
+  "name": "hop-signaling",
   "version": "1.0.0",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Signaling server for Hop: introduces browsers so they can share files peer-to-peer.",
   "dependencies": {
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "socket.io": "^4.8.1",
     "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

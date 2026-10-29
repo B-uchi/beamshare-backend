@@ -1,35 +1,36 @@
-# BeamShare - Signaling Server
+# Hop — signaling server
 
-The lightweight signaling backend for **BeamShare**, facilitating peer discovery and WebRTC handshakes.
+The small WebSocket server that introduces browsers to each other so [Hop](../frontend) can open direct WebRTC data channels between them. **File contents never pass through here.**
 
-### 🛠 Tech Stack
-- **Runtime:** [Node.js](https://nodejs.org/)
-- **Communication:** [`ws`](https://github.com/websockets/ws) (WebSocket library)
-- **Security:** [`jsonwebtoken`](https://github.com/auth0/node-jsonwebtoken) (JWT)
+## What it does
 
-### 📂 Module Overview
-- **`server.js`**: The central signaling hub. It performs:
-  - **Authentication**: Validates clients via JSON Web Tokens before allowing session entry.
-  - **Session Management**: Orchestrates session creation, joining, and cleanup.
-  - **Signaling Relay**: Forwards WebRTC offers, answers, and ICE candidates between peers to establish P2P connections.
-  - **Fallback Transport**: Provides a basic file-chunk broadcasting mechanism for clients as a fallback.
-  - **Reconnection Logic**: Manages client timeouts (10s for hosts, 5s for peers) and session persistence during brief disconnects.
+- **Rooms** — creates rooms with unambiguous 6-character codes (`ABCDEFGHJKMNPQRSTUVWXYZ23456789`), handles join / leave / end, host-only lock, remove and rename. Up to `MAX_MEMBERS` people per room.
+- **Stable identity & resume** — each member gets an `id` and a secret seat `key`. A refreshed tab or a dropped connection sends `resume { code, id, key }` and reclaims the same seat (same name, same role). Seats are held for `GRACE_MS` after a disconnect; if the host is gone longer than that, the room ends.
+- **Always-in-sync roster** — every membership change broadcasts the full room snapshot (`room` message), so clients can't drift.
+- **Signal relay** — forwards WebRTC offers/answers/ICE candidates (`signal { to, data }`) only between members of the same room.
+- **Health** — `GET /health` returns `{ ok, rooms, uptime }` for platform health checks.
+- **Hardening** — JWT checked during the WebSocket upgrade, optional `ALLOWED_ORIGINS`, ping/pong heartbeat that terminates dead sockets, per-socket rate limiting, max payload size, malformed-message tolerance, graceful shutdown.
 
-### 🚀 Setup
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-2. **Environment Configuration**:
-   Create a `.env` file in this directory:
-   ```env
-   PORT=8080
-   JWT_SECRET=your_super_secret_here
-   ```
-3. **Run the Server**:
-   ```bash
-   node server.js
-   ```
+## Setup
 
----
-*The bridge that connects users for seamless P2P sharing.*
+```bash
+npm install
+cp .env.example .env   # then set JWT_SECRET (must match the frontend)
+npm run dev            # or: npm start
+```
+
+| Variable | Default | |
+| --- | --- | --- |
+| `JWT_SECRET` | — (required) | Shared with the frontend's `/api/token` route |
+| `PORT` | `8080` | |
+| `GRACE_MS` | `30000` | How long a disconnected seat is held |
+| `MAX_MEMBERS` | `16` | People per room |
+| `ALLOWED_ORIGINS` | (any) | Comma-separated list, e.g. `https://hop.example.com` |
+
+## Protocol
+
+Client → server: `ping`, `create {name}`, `join {code,name}`, `resume {code,id,key}`, `leave`, `end`, `lock {locked}`, `kick {id}`, `rename {name}`, `signal {to,data}`.
+
+Server → client: `hello`, `pong`, `joined {resumed,self,room}`, `room {room,event?}`, `signal {from,data}`, `signal-failed {to}`, `ended {reason}`, `error {code,message}`.
+
+Types live in `frontend/lib/hop/protocol.ts`.
